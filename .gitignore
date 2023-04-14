@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+## Data which is not public
+test.csv
+train.csv
