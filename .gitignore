@@ -128,6 +128,15 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+############################
+# # #    J  O  H  N    # # #
+############################
 ## Data which is not public
 test.csv
 train.csv
+
+## Template for solutions
+Solutions_Template.csv
+
+## Corrections (Dr. Yurko)
+Corrections
