@@ -13,15 +13,13 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, PolynomialFeatures
 from sklearn.decomposition import PCA
 from sklearn.compose import ColumnTransformer
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, _search
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import make_scorer
 from sklearn.neural_network import MLPRegressor
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import GradientBoostingRegressor
-
-from tqdm import tqdm
 
 
 #######################################
@@ -35,6 +33,24 @@ def rmsle(y_true : np.ndarray, y_pred : np.ndarray):
 
 score_rmsle = make_scorer(rmsle, greater_is_better=False)
 
+## Plot from results
+def Build_Summary_CV( results : _search.GridSearchCV):
+    #List of params to plot
+    List_of_params = [par[17:] for par in list(results.cv_results_.keys()) if 'param_estimator' in par]
+
+    #Create an empty Dictionary
+    Dictio = {}
+
+    #Populate the dictionary
+    for param in List_of_params:
+        Dictio[param] = results.cv_results_[f'param_estimator__{param}'].data.astype('float64')
+
+    # Get summaries
+    Dictio['mean_test_score'] = results.cv_results_['mean_test_score']
+    Dictio['std_test_score'] = results.cv_results_['std_test_score']
+
+    return(pd.DataFrame(Dictio))
+
 
 #################################
 ## DataFit : N E W : C L A S S ##
@@ -45,7 +61,7 @@ class DataFit:
     '''
 
     ## Initialize the class, the main attributes to consider are the DataFrame object, as well as lists of the continous, categorical inputs to consider, and the output to focus on
-    def __init__(self, df : pd.DataFrame, continous_inputs : List[str], categorical_inputs : List[str], output : str):
+    def __init__(self, df : pd.DataFrame, continous_inputs : List[str], categorical_inputs : List[str], output : str, use_PCA : bool = False):
         #Create a copy of the originally provided DataFrame and select only the variables we will focus on. Store this new DataFrame into the df attribute
         self.df = df.loc[:,continous_inputs + categorical_inputs + [output]].copy()
 
@@ -64,10 +80,12 @@ class DataFit:
         # self.score = score_rmsle
         self.score = 'neg_mean_squared_error'
 
+        self.use_PCA = use_PCA
+
 
     ###########
     ## Define a method that will prepare the preprocessing based on user-defined pipelines
-    def DefinePreprocessing(self, PCA : bool = False, n_components : int = 7, remainder : Optional[Union[str, Pipeline]] = 'drop', _PolyFeatures : bool = False):
+    def DefinePreprocessing(self, n_components : int = 5, remainder : Optional[Union[str, Pipeline]] = 'drop', _PolyFeatures : bool = False, consider_PCA = False):
         '''
         Method that stores Pipelines with basic preprocessing operations for inputs, outputs, and categorical variables
         ColumnTransformer objects will be used to standarize the input and output variables when fitting the models (to avoid potential data leakage)
@@ -79,13 +97,20 @@ class DataFit:
         # Work with a list first (appending as needed) and then create the Pipeline for continous inputs
         _num_steps = [('std_input', StandardScaler())]
 
-        if PCA == True:
+        # Get the PCA
+        if consider_PCA == False:
+            use_PCA = False
+        else:
+            use_PCA = self.use_PCA
+
+
+        if use_PCA == True:
             _num_steps.append( ('PCA', PCA(n_components= n_components)) )
         
         if _PolyFeatures ==True:
             _num_steps.append(('Polynomial_Interactions', PolynomialFeatures(degree=2)))
 
-        if PCA == True or _PolyFeatures == True:
+        if use_PCA == True or _PolyFeatures == True:
             _num_steps.append(('std_features', StandardScaler()))
 
         num_transform = Pipeline(steps = _num_steps)
@@ -129,7 +154,7 @@ class DataFit:
         Score = self.score
 
         #Build the Preprocessing ColumnTransformer
-        Preprocessing = self.DefinePreprocessing(PCA=False, n_components=7, remainder='drop', _PolyFeatures=False)
+        Preprocessing = self.DefinePreprocessing(remainder='drop', _PolyFeatures=False, consider_PCA = True)
 
         #Complete Estimator → preprocess first,  then fit the enet
         _Estimator_wflow = Pipeline(steps = [('preprocessing', Preprocessing),
@@ -160,7 +185,7 @@ class DataFit:
         Score = self.score
 
         #Build the column transformer for preprocessing
-        Preprocessing = self.DefinePreprocessing(PCA=False, n_components=7, remainder='drop', _PolyFeatures=True)
+        Preprocessing = self.DefinePreprocessing(remainder='drop', _PolyFeatures=True, consider_PCA = True)
 
         #Complete Estimator → preprocess first,  then fit the enet
         _Estimator_wflow = Pipeline(steps = [('preprocessing', Preprocessing),
@@ -197,7 +222,7 @@ class DataFit:
         Score = self.score
 
         #Build the column transformer for preprocessing
-        Preprocessing = self.DefinePreprocessing(PCA=False, n_components=7, remainder='drop', _PolyFeatures=False)
+        Preprocessing = self.DefinePreprocessing(remainder='drop', _PolyFeatures=False, consider_PCA = True)
 
         #Complete Estimator → preprocess first,  then fit the NN
         _Estimator_wflow = Pipeline(steps = [('preprocessing', Preprocessing),
@@ -218,18 +243,17 @@ class DataFit:
     ## Define a function for the SVM
     def SVM(self):
         #Basic Estimator → Supported Vector Machine Regressor
-        _Estimator = SVR(gamma='scale', max_iter = 100000)
+        _Estimator = SVR(gamma='scale', max_iter = 100000, kernel='poly')
 
         #Param_grid → For the SVM we fit the degree of the polynomial and the C. We could also test the kernel (more computational cost)
-        _Grid = {'estimator__kernel' : ['poly'],
-                 'estimator__degree' : [2,3],
+        _Grid = {'estimator__degree' : [2,3],
                  'estimator__C' : [0.001, 0.01, 0.1, 1, 10, 100, 1000]}
 
         #Score → RMSLE
         Score = self.score
 
         #Build the column transformer for preprocessing
-        Preprocessing = self.DefinePreprocessing(PCA=False, n_components=7, remainder='drop', _PolyFeatures=False)
+        Preprocessing = self.DefinePreprocessing(remainder='drop', _PolyFeatures=False, consider_PCA = True)
 
         #Complete Estimator → preprocess first,  then fit the SVM
         _Estimator_wflow = Pipeline(steps = [('preprocessing', Preprocessing),
@@ -242,7 +266,7 @@ class DataFit:
                                         cv=self.DefineSplit())
 
         #Fit
-        self.SVM_results = self._svm_grid.fit(X=self.df.drop(self.output, axis=1).copy(),
+        self.SVM_results = self._SVM_grid.fit(X=self.df.drop(self.output, axis=1).copy(),
                                                           y=self.df.loc[:,self.output].copy())
         
 
@@ -259,7 +283,7 @@ class DataFit:
         Score = self.score
 
         #Build the column transformer for preprocessing
-        Preprocessing = self.DefinePreprocessing(PCA=False, n_components=7, remainder='drop', _PolyFeatures=False)
+        Preprocessing = self.DefinePreprocessing(remainder='drop', _PolyFeatures=False, consider_PCA = False)
 
         #Complete Estimator → preprocess first,  then fit the enet
         _Estimator_wflow = Pipeline(steps = [('preprocessing', Preprocessing),
@@ -284,13 +308,13 @@ class DataFit:
 
         _Grid = {'estimator__n_estimators' : [25,100,250,400],
                  'estimator__max_depth' : [1,3,6],
-                 'estimator__learning_rate' : [0.1/5, 0.1, 0.5*5]}
+                 'estimator__learning_rate' : [0.1/5, 0.1, 0.5]}
 
         #Score → RMSLE
         Score = self.score
 
         #Build the column transformer for preprocessing
-        Preprocessing = self.DefinePreprocessing(PCA=False, n_components=7, remainder='drop', _PolyFeatures=False)
+        Preprocessing = self.DefinePreprocessing(remainder='drop', _PolyFeatures=False, consider_PCA = False)
 
         #Complete Estimator → preprocess first,  then fit the enet
         _Estimator_wflow = Pipeline(steps = [('preprocessing', Preprocessing),
@@ -310,6 +334,114 @@ class DataFit:
     ###########
     ## Define a wrapper method capable of doing all the fits at once
     def FitAll(self):
-        for model in tqdm([self.FirstEnet(), self.SecondEnet(), self.NN(), self.SVM(), self.RF(), self.GBM()]):
-            model
+        # Fit each model, one by one
+        if self.use_PCA == False:
+            for i , model in enumerate([self.FirstEnet(), self.SecondEnet(), self.NN(), self.SVM(), self.RF(), self.GBM()]):
+                model
+        else:
+            for i , model in enumerate([self.FirstEnet(), self.SecondEnet(), self.NN(), self.SVM()]):
+                model
+            
+
+
+    ############
+    ## Define a function to plot all the results
+    def PlotAll(self):
+
+        #Item list of results (depends on the use of PCA)
+        if self.use_PCA == False:
+            Item_list = [self.FirstEnet_results,
+                        self.SecondEnet_results,
+                        self.NN_results,
+                        self.SVM_results,
+                        self.RF_results,
+                        self.GBM_results]
+            
+            Names = ['First Enet', 'Second Enet', 'Neural Network', 'Supported Vector Machine', 'Random Forest', 'Gradient Boosted']
+        else:
+            Item_list = [self.FirstEnet_results,
+                        self.SecondEnet_results,
+                        self.NN_results,
+                        self.SVM_results]
+            
+            Names = ['First Enet', 'Second Enet', 'Neural Network', 'Supported Vector Machine']
+            
+        # Store the scores
+        Scores = [item.best_score_ for item in Item_list]
         
+        # Get the standard error in the scores
+        Errors = [item.cv_results_['std_test_score'][np.argmin(self.FirstEnet_results.cv_results_['rank_test_score'])]
+                  for item in Item_list]
+
+
+        # Find the best score overall to highlight in the figure
+        Best_Score_overall = max(Scores)
+        Min_index = Scores.index(Best_Score_overall)
+
+        # Colors for the bars
+        colors = np.array([[152/255,251/255,152/255,0.4] for i in range(len(Scores))])
+        colors[Min_index,:] = [50/255,205/255,50/255,1]
+
+        #Plot
+        _ , ax = plt.subplots(figsize=(6,4))
+        ax.bar(Names, Scores, yerr=Errors, color = colors, edgecolor='black')
+        ax.tick_params(axis='x',which='both',rotation=90)
+        ax.set_title('Scores of all models')
+        ax.set_ylabel('Score = neg RMSE')
+        plt.tight_layout()
+        plt.show()
+
+        self.Performances = [i for i in zip(Names,Scores)]
+
+
+    ############
+    ## Define a function for the random forest, that will give you the most important feature
+    #Code based on the example provided in https://scikit-learn.org/stable/auto_examples/ensemble/plot_forest_importances.html
+    def EvaluateRandomForest(self):
+        #Retrieve the forest from the best estimator case
+        forest =  self.RF_results.best_estimator_.named_steps['estimator']
+
+        #Retrieve the importances for that forest
+        importances = forest.feature_importances_
+
+        #Compute the standard error for the importances
+        std = np.std([tree.feature_importances_ for tree in forest.estimators_], axis=0)
+
+        #Get the feature names
+        feature_names = self.RF_results.best_estimator_.named_steps.preprocessing.get_feature_names_out()
+
+        #Store results in a Series
+        forest_importances = pd.Series(importances, index=feature_names)
+
+        #Plot
+        _, ax = plt.subplots(figsize = (8,6))
+        forest_importances.plot.bar(yerr=std, ax=ax)
+        ax.set_title("Feature importances using MDI")
+        ax.set_ylabel("Mean decrease in impurity")
+        plt.tight_layout()
+        plt.show()
+        
+    
+    ############
+    ## Define a function that will automate generating plots for each model's performance
+    def DataFrameForEachModel(self):
+        #Item list of results (depends on the use of PCA)
+        if self.use_PCA == False:
+            Item_list = [self.FirstEnet_results,
+                        self.SecondEnet_results,
+                        self.NN_results,
+                        self.SVM_results,
+                        self.RF_results,
+                        self.GBM_results]
+            
+            Names = ['First Enet', 'Second Enet', 'Neural Network', 'Supported Vector Machine', 'Random Forest', 'Gradient Boosted']
+        else:
+            Item_list = [self.FirstEnet_results,
+                        self.SecondEnet_results,
+                        self.NN_results,
+                        self.SVM_results]
+            
+            Names = ['First Enet', 'Second Enet', 'Neural Network', 'Supported Vector Machine']
+
+        # Put everything together
+        return( [(name, Build_Summary_CV( result )) for (result, name) in zip(Item_list, Names)])
