@@ -77,8 +77,9 @@ class DataFit:
         self.my_cv = StratifiedKFold(n_splits=5, random_state=101, shuffle=True)
 
         #Define the scoring metric
-        # self.score = score_rmsle
         self.score = 'neg_mean_squared_error'
+        # self.score = score_rmsle
+        
 
         self.use_PCA = use_PCA
 
@@ -147,8 +148,8 @@ class DataFit:
         _Estimator = ElasticNet(fit_intercept = True, max_iter = 50000)
 
         #Param_grid → For the enet, we test the l1 ratio and alpha
-        _Grid = {'estimator__l1_ratio' : np.linspace(0.00001,1, num=5),
-                     'estimator__alpha' : np.exp( np.linspace(-6, 6, num=11))}
+        _Grid = {'estimator__l1_ratio' : np.linspace(0.00001,1, num=3),
+                     'estimator__alpha' : np.exp( np.linspace(-5, 5, num=5))}
 
         #Score → RMSLE, but Sklearn has the MSLE available, will transform it later
         Score = self.score
@@ -178,8 +179,8 @@ class DataFit:
         _Estimator = ElasticNet(fit_intercept = True, max_iter = 50000)
 
         #Param_grid → For the enet, we test the l1 ratio and alpha
-        _Grid = {'estimator__l1_ratio' : np.linspace(0,1, num=5),
-                     'estimator__alpha' : np.exp( np.linspace(-6, 6, num=11))}
+        _Grid = {'estimator__l1_ratio' : np.linspace(0.00001,1, num=3),
+                     'estimator__alpha' : np.exp( np.linspace(-5, 5, num=5))}
 
         #Score → RMSLE
         Score = self.score
@@ -206,7 +207,7 @@ class DataFit:
     ## Define a function for the Neural Network
     def NN(self):
         #Basic Estimator → Neural Network
-        _Estimator = MLPRegressor(activation='tanh', solver='sgd', 
+        _Estimator = MLPRegressor(activation='tanh', solver='sgd', batch_size = 25,
                                    max_iter=5001, learning_rate_init=0.001, random_state=101)
 
         #Param_grid → For the NN, we test the number of hidden layers, the batch size and the alpha
@@ -214,9 +215,8 @@ class DataFit:
         #            'nn__batch_size' : np.linspace(5,30, num=6, dtype=int),
         #            'nn__alpha' : 10**(-np.linspace(0,5, num=6))}
 
-        _Grid = {'estimator__hidden_layer_sizes' : [3,4,5],
-                   'estimator__batch_size' : [25,30],
-                   'estimator__alpha' : [0.0001, 0.001]}
+        _Grid = {'estimator__hidden_layer_sizes' : [3,5],
+                 'estimator__alpha' : [0.0001, 0.01]}
 
         #Score → RMSLE
         Score = self.score
@@ -387,7 +387,7 @@ class DataFit:
         ax.bar(Names, Scores, yerr=Errors, color = colors, edgecolor='black')
         ax.tick_params(axis='x',which='both',rotation=90)
         ax.set_title('Scores of all models')
-        ax.set_ylabel('Score = neg RMSE')
+        ax.set_ylabel('Score = neg RMSLE')
         plt.tight_layout()
         plt.show()
 
@@ -423,7 +423,7 @@ class DataFit:
         
     
     ############
-    ## Define a function that will automate generating plots for each model's performance
+    ## Define a function that will automate generating DataFrames with key information about each model
     def DataFrameForEachModel(self):
         #Item list of results (depends on the use of PCA)
         if self.use_PCA == False:
@@ -445,3 +445,41 @@ class DataFit:
 
         # Put everything together
         return( [(name, Build_Summary_CV( result )) for (result, name) in zip(Item_list, Names)])
+    
+
+    ##########
+    ## Automate the figures of the hyper parameters
+    def PlotEachModel(self, height=2.5, aspect=1.5):
+
+        DF_Results = self.DataFrameForEachModel()
+
+        sns.relplot(data = DF_Results[0][1], x='alpha', y='mean_test_score', hue='l1_ratio', height=height,
+                    palette='coolwarm', kind='line', aspect=aspect).set(title = DF_Results[0][0])
+
+        plt.show()
+
+        sns.relplot(data = DF_Results[1][1], x='alpha', y='mean_test_score', hue='l1_ratio', height=height,
+                    palette='coolwarm', kind='line', aspect=aspect).set(title = DF_Results[1][0])
+
+        plt.show()
+
+        sns.relplot(data = DF_Results[2][1], x='alpha', y='mean_test_score', hue='hidden_layer_sizes', height=height,
+                    palette='coolwarm', kind='line', aspect=aspect).set(title = DF_Results[2][0])
+
+        plt.show()
+
+        sns.relplot(data = DF_Results[3][1], x='C', y='mean_test_score', hue='degree', height=height,
+                    palette='coolwarm', kind='line', aspect=aspect).set(title = DF_Results[3][0])
+
+        plt.show()
+
+        if self.use_PCA == False:
+            sns.relplot(data = DF_Results[4][1], x='n_estimators', y='mean_test_score', hue='max_features', height=height,
+                        palette='coolwarm', kind='line', aspect=aspect).set(title = DF_Results[4][0])
+
+            plt.show()
+
+            sns.relplot(data = DF_Results[5][1], x='n_estimators', y='mean_test_score', hue='max_depth', col = 'learning_rate', height=height,
+                        palette='coolwarm', kind='line', aspect=aspect)
+
+            plt.show()
